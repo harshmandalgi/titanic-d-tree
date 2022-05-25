@@ -1,1 +1,1 @@
-# analyse titanic dataset using decision tree 
+# Analyse Titanic Dataset Using Decision Tree 
