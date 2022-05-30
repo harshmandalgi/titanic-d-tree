@@ -9,8 +9,10 @@ import numpy as np
 import pandas as pd
 import re
 from sklearn import tree
+import random
 
 import time
+import math
 
 
 # Create Decision Tree with max_depth = 3
@@ -21,17 +23,17 @@ app = Flask(__name__)
 api = Api(app)
 
 post_args = reqparse.RequestParser()
-post_args.add_argument('PassengerId', type = int, help = 'PassengerId is required', required = True)
-# post_args.add_argument('Pclass', type = str, help = 'Pclass is required', required = True)
-# post_args.add_argument('Name', type = str, help = 'Name is required', required = True)
-# post_args.add_argument('Sex', type = str, help = 'Sex is required', required = True)
-# post_args.add_argument('Age', type = str, help = 'Age is required', required = True)
-# post_args.add_argument('SibSp', type = str, help = 'SibSp is required', required = True)
-# post_args.add_argument('Parch', type = str, help = 'Parch is required', required = True)
-# post_args.add_argument('Ticket', type = str, help = 'Ticket is required', required = True)
-# post_args.add_argument('Fare', type = str, help = 'Fare is required', required = True)
-# post_args.add_argument('Cabin', type = str, help = 'Cabin is required', required = True)
-# post_args.add_argument('Embarked', type = str, help = 'Embarked is required', required = True)
+post_args.add_argument('PassengerId', type = int, help = 'PassengerId is required')
+post_args.add_argument('Pclass', type = int, help = 'Pclass is required')
+post_args.add_argument('Name', type = str, help = 'Name is required')
+post_args.add_argument('Sex', type = str, help = 'Sex is required')
+post_args.add_argument('Age', type = float, help = 'Age is required')
+post_args.add_argument('SibSp', type = int, help = 'SibSp is required')
+post_args.add_argument('Parch', type = int, help = 'Parch is required')
+post_args.add_argument('Ticket', type = str, help = 'Ticket is required')
+post_args.add_argument('Fare', type = float, help = 'Fare is required')
+post_args.add_argument('Cabin', type = str, help = 'Cabin is required')
+post_args.add_argument('Embarked', type = str, help = 'Embarked is required')
 
 
 
@@ -40,35 +42,47 @@ class Predict(Resource):
 		begin_block = time.time()
 		args = post_args.parse_args()
 
-		inputs = {
+		inputs_dict = {
 		 'PassengerId': args['PassengerId'],
-		#  'Pclass': args['Pclass'],
-		#  'Name': args['Name'],
-		#  'Sex': args['Sex'],
-		#  'Age': args['Age'],
-		#  'SibSp': args['SibSp'],
-		#  'Parch': args['Parch'],
-		#  'Ticket': args['Ticket'],
-		#  'Fare': args['Fare'],
-		#  'Cabin': args['Cabin'],
-		#  'Embarked': args['Embarked'],
-		}
+		 'Pclass': args['Pclass'],
+		 'Name': args['Name'],
+		 'Sex': args['Sex'],
+		 'Age': args['Age'],
+		 'SibSp': args['SibSp'],
+		 'Parch': args['Parch'],
+		 'Ticket': args['Ticket'],
+		 'Fare': args['Fare'],
+		 'Cabin': args['Cabin'],
+		 'Embarked': args['Embarked'],
+		} 
+
+		inputs = inputs_dict.copy()
 
 		# inputs_df = pd.DataFrame(inputs)
 		# print(inputs['PassengerId'])
 
-		inputs_df = test_dataset.loc[test_dataset['PassengerId'] == inputs['PassengerId']]
-		# print(inputs_df)
+		# inputs_df = test_dataset.loc[test_dataset['PassengerId'] == inputs['PassengerId']]
+		# inputs_dict = inputs_df.set_index('PassengerId').T.to_dict('dict')
+		# inputs_dict = inputs_dict[inputs['PassengerId']]
+		# print(inputs_dict)
+
+		# return {
+		# 	'PassengerId': inputs['PassengerId'],
+		# 	}	
 
 		# preprocess inputs
-		inputs_df['Has_Cabin'] = inputs_df["Cabin"].apply(lambda x: 0 if type(x) == float else 1)
+		inputs_dict['Has_Cabin'] = (lambda x: 0 if type(x) == float else 1)(inputs_dict['Cabin'])
 		
-		inputs_df['FamilySize'] = inputs_df['SibSp'] + inputs_df['Parch'] + 1
+		inputs_dict['FamilySize'] = inputs_dict['SibSp'] + inputs_dict['Parch'] + 1
 		
-		inputs_df['IsAlone'] = 0
-		inputs_df.loc[inputs_df['FamilySize'] == 1, 'IsAlone'] = 1
-		inputs_df['Age'] = inputs_df['Age'].astype(int)
-		inputs_df['Sex'] = inputs_df['Sex'].map( {'female': 0, 'male': 1} ).astype(int)
+		inputs_dict['IsAlone'] = 0
+		inputs_dict['IsAlone'] = 1 if inputs_dict['FamilySize'] == 1 else 0
+
+		# inputs_dict['Age'] = int(inputs_dict['Age'])
+		if inputs_dict['Sex'] == 'female':
+		    inputs_dict['Sex'] = 0 
+		elif inputs_dict['Sex'] == 'male':
+		    inputs_dict['Sex'] = 1
 
 		# Define function to extract titles from passenger names
 		def get_title(name):
@@ -78,51 +92,82 @@ class Predict(Resource):
 		        return title_search.group(1)
 		    return ""
 
-		inputs_df['Title'] = inputs_df['Name'].apply(get_title)
+		inputs_dict['Title'] = get_title(inputs_dict['Name'])
 
 		# Group all non-common titles into one single grouping "Rare"
-		inputs_df['Title'] = inputs_df['Title'].replace(['Lady', 'Countess','Capt', 'Col','Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'], 'Rare')
-
-		inputs_df['Title'] = inputs_df['Title'].replace('Mlle', 'Miss')
-		inputs_df['Title'] = inputs_df['Title'].replace('Ms', 'Miss')
-		inputs_df['Title'] = inputs_df['Title'].replace('Mme', 'Mrs')
+		inputs_dict['Title'] = 'Rare' if inputs_dict['Title'] in ['Lady', 'Countess','Capt', 'Col','Don', 'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer', 'Dona'] else inputs_dict['Title']
+		inputs_dict['Title'] = inputs_dict['Title'].replace('Mlle', 'Miss')
+		inputs_dict['Title'] = inputs_dict['Title'].replace('Ms', 'Miss')
+		inputs_dict['Title'] = inputs_dict['Title'].replace('Mme', 'Mrs')
 
 		# Mapping titles
 		title_mapping = {"Mr": 1, "Master": 2, "Mrs": 3, "Miss": 4, "Rare": 5}
-		inputs_df['Title'] = inputs_df['Title'].map(title_mapping)
+		inputs_dict['Title'] = title_mapping[inputs_dict['Title']]
 
 		# Mapping Embarked
-		inputs_df['Embarked'] = inputs_df['Embarked'].map( {'S': 0, 'C': 1, 'Q': 2} ).astype(int)
+		if 'Embarked' not in inputs_dict['Embarked'] or not inputs_dict['Embarked'] or inputs_dict['Embarked'] == 'nan':
+			inputs_dict['Embarked'] = 'S'
+
+		embarked_mapping = {'S': 0, 'C': 1, 'Q': 2}
+		inputs_dict['Embarked'] = embarked_mapping[inputs_dict['Embarked']]
 		    
 		# Mapping Fare
-		inputs_df.loc[ inputs_df['Fare'] <= 7.91, 'Fare'] 						        = 0
-		inputs_df.loc[(inputs_df['Fare'] > 7.91) & (inputs_df['Fare'] <= 14.454), 'Fare'] = 1
-		inputs_df.loc[(inputs_df['Fare'] > 14.454) & (inputs_df['Fare'] <= 31), 'Fare']   = 2
-		inputs_df.loc[ inputs_df['Fare'] > 31, 'Fare'] 							        = 3
-		inputs_df['Fare'] = inputs_df['Fare'].astype(int)
+		if 'Fare' not in inputs_dict or inputs_dict['Fare'] == float('nan'):
+			inputs_dict['Fare'] = median_fare
+
+		if inputs_dict['Fare'] >= 31: 
+		    inputs_dict['Fare'] = 3
+		elif inputs_dict['Fare'] >= 14.454: 
+		    inputs_dict['Fare'] = 2
+		elif inputs_dict['Fare'] >= 7.91: 
+		    inputs_dict['Fare'] = 1
+		else:
+		    inputs_dict['Fare'] = 0
 		    
 		# Mapping Age
-		inputs_df.loc[ inputs_df['Age'] <= 16, 'Age'] 					       = 0
-		inputs_df.loc[(inputs_df['Age'] > 16) & (inputs_df['Age'] <= 32), 'Age'] = 1
-		inputs_df.loc[(inputs_df['Age'] > 32) & (inputs_df['Age'] <= 48), 'Age'] = 2
-		inputs_df.loc[(inputs_df['Age'] > 48) & (inputs_df['Age'] <= 64), 'Age'] = 3
-		inputs_df.loc[ inputs_df['Age'] > 64, 'Age'] ;
+		if 'Age' not in inputs_dict or math.isnan(inputs_dict['Age']):
+			inputs_dict['Age'] = age_null_random_list[random.randint(0, len(age_null_random_list)-1)]
+
+		# print(inputs_dict['Age'] == float('nan'))
+		inputs_dict['Age'] = int(inputs_dict['Age'])
+
+		if inputs_dict['Age'] >= 64: 
+		    inputs_dict['Age'] = 4
+		elif inputs_dict['Age'] >= 48: 
+		    inputs_dict['Age'] = 3
+		elif inputs_dict['Age'] >= 32: 
+		    inputs_dict['Age'] = 2
+		elif inputs_dict['Age'] >= 16: 
+		    inputs_dict['Age'] = 1
+		else:
+		    inputs_dict['Age'] = 0
 
 		# Feature selection: remove variables no longer containing relevant information
-		drop_elements = ['PassengerId', 'Name', 'Ticket', 'Cabin', 'SibSp']
-		inputs_df = inputs_df.drop(drop_elements, axis = 1)
+		del inputs_dict['Name']
+		del inputs_dict['Ticket']
+		del inputs_dict['Cabin']
+		del inputs_dict['SibSp']
+		del inputs_dict['PassengerId']
+
+		# convert dict into dataframe
+		inputs_df_prcsd = pd.DataFrame(inputs_dict, index=[0])
+
+		# print(inputs_df_prcsd)
+
+		# return {
+		# 	'PassengerId': inputs['PassengerId'],
+		# 	}
 
 		# predict
 		begin = time.time()
-		survived = decision_tree.predict(inputs_df)
+		survived = decision_tree.predict(inputs_df_prcsd)
 		end = time.time()
-		print(survived)
 		
 		return {
 			'PassengerId': inputs['PassengerId'],
 			'Survived': str(survived.astype(int)[0]),
-			'Time taken for predict': str(end-begin),
-			'Time taken for block': str(end-begin_block)
+			'Time taken for predict': str((end-begin)*1000)[:4] + ' ms',
+			'Time taken for block': str((end-begin_block)*1000)[:4] + ' ms'
 		}
 
 		
@@ -144,7 +189,10 @@ if __name__ == '__main__':
 	dataset['IsAlone'] = 0
 	dataset.loc[dataset['FamilySize'] == 1, 'IsAlone'] = 1
 	dataset['Embarked'] = dataset['Embarked'].fillna('S')
-	dataset['Fare'] = dataset['Fare'].fillna(dataset['Fare'].median())
+
+	median_fare = dataset['Fare'].median()
+	dataset['Fare'] = dataset['Fare'].fillna(median_fare)
+
 	age_avg = dataset['Age'].mean()
 	age_std = dataset['Age'].std()
 	age_null_count = dataset['Age'].isnull().sum()
@@ -192,7 +240,7 @@ if __name__ == '__main__':
 	dataset.loc[(dataset['Age'] > 16) & (dataset['Age'] <= 32), 'Age'] = 1
 	dataset.loc[(dataset['Age'] > 32) & (dataset['Age'] <= 48), 'Age'] = 2
 	dataset.loc[(dataset['Age'] > 48) & (dataset['Age'] <= 64), 'Age'] = 3
-	dataset.loc[ dataset['Age'] > 64, 'Age'] ;
+	dataset.loc[ dataset['Age'] > 64, 'Age'] = 4 ;
 
 	# Feature selection: remove variables no longer containing relevant information
 	drop_elements = ['PassengerId', 'Name', 'Ticket', 'Cabin', 'SibSp']
@@ -208,7 +256,27 @@ if __name__ == '__main__':
 
 
 
+# fill empty data
 
+# # Remove all NULLS in the Embarked column
+# for dataset in full_data:
+#     dataset['Embarked'] = dataset['Embarked'].fillna('S')
+
+
+# # Remove all NULLS in the Fare column
+# for dataset in full_data:
+#     dataset['Fare'] = dataset['Fare'].fillna(train['Fare'].median())
+
+
+# # Remove all NULLS in the Age column
+# for dataset in full_data:
+#     age_avg = dataset['Age'].mean()
+#     age_std = dataset['Age'].std()
+#     age_null_count = dataset['Age'].isnull().sum()
+#     age_null_random_list = np.random.randint(age_avg - age_std, age_avg + age_std, size=age_null_count)
+#     # Next line has been improved to avoid warning
+#     dataset.loc[np.isnan(dataset['Age']), 'Age'] = age_null_random_list
+#     dataset['Age'] = dataset['Age'].astype(int)
 
 
 
